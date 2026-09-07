@@ -27,15 +27,19 @@ def display_stats(*args):
 
 patient_name = input("Enter patient name:")
 
-request = input("Enter 'all' for all patient stats or 'specific' for a specific patient stat:")
+request = input("Enter 'all' for all patient stats or 'specific' for one patient: ")
 
 if request == "all":
-    all_stats = get_all_stats(patient_name, heart_rate_samples)
-    display_stats(*all_stats)
+    display_stats(*heart_rate_samples.values())
 
 elif request == "specific":
-    patient_number = int(input("Enter patient number (1-8):"))
-    get_specific_stat(patient_name, heart_rate_samples, patient_number)
+    patient_number = int(input("Enter patient number (1-8): "))
+
+    patients = list(heart_rate_samples.keys())
+    patient_name = patients[patient_number - 1]
+
+    print(patient_name)
+    print(heart_rate_samples[patient_name])
 
 else:
     print("Invalid request.")
