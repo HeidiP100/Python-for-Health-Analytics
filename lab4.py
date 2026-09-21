@@ -6,7 +6,7 @@ URL = (f"https://api.census.gov/data/{YEAR}/{DATASET}")
 API_KEY = "7d0327180a3169ad783e4b028f83387fcd8d2c60"
 
 state_code = input(
-    "Enter the State FIPS code(s) that you would like data for: "
+    "Enter the State FIPS code that you would like data for: "
 )
 
 variables = input(
