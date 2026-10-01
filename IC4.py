@@ -28,5 +28,3 @@ print(df.groupby("Sex")["Data_Value"].mean())
 # Summary for Age
 print("Age averages:")
 print(df.groupby("Age")["Data_Value"].mean())
-
-
