@@ -2,7 +2,7 @@
 # Heidi Pavka                #
 # hpavka@usf.edu             #
 # 10/18/2026                 #
-# Project_3.py imrpoves and  #
+# Project_3.py improves and  #
 # debugs AI generated code   #
 ##############################
 """
@@ -74,17 +74,17 @@ def clean_data(input_path: Path) -> tuple[pd.DataFrame, dict]:
 
     # IMPROVEMENT: Column header validation and whitespace stripping
     df.columns = [str(c).strip() for c in df.columns]
+
+    # Detect duplicate headers after whitespace removed
+    if df.columns.duplicated().any():
+        duplicates = df.columns[df.columns.duplicated()].tolist()
+        raise ValueError(
+            "Duplicate column names found: " + ", ".join(duplicates)
+        )
+
     missing_columns = [c for c in REQUIRED_COLUMNS if c not in df.columns]
     if missing_columns:
         raise ValueError("Input file is missing expected columns: " + ", ".join(missing_columns))
-
-    # IMPROVEMENT: Chronological Date Range Validation
-    invalid_date_order = (
-        df["Date of Admission"].notna()
-        & df["Discharge Date"].notna()
-        & (df["Discharge Date"] < df["Date of Admission"])
-    )
-    df.loc[invalid_date_order, "discharge Date"] = pd.NaT
 
     # Trim whitespace from text fields
     for col in df.select_dtypes(include=["object", "string"]).columns:
@@ -92,27 +92,59 @@ def clean_data(input_path: Path) -> tuple[pd.DataFrame, dict]:
         df[col] = df[col].replace("", pd.NA)
 
     # Convert numeric fields safely.
+    # Save original values so conversion failures can be counted
+    age_original = df["Age"].copy()
     df["Age"] = pd.to_numeric(df["Age"], errors="coerce")
-    invalid_age = df["Age"].notna() & ~df["Age"].between(0, 120)
+    invalid_age = (
+        (age_original.notna() & df["Age"].isna())
+        | (df["Age"].notna() & ~df["Age"].between(0, 120))
+    )
     df.loc[invalid_age, "Age"] = np.nan
     df["Age"] = df["Age"].round().astype("Int64")
 
+    billing_original = df["Billing Amount"].copy()
     df["Billing Amount"] = pd.to_numeric(df["Billing Amount"], errors="coerce")
-    invalid_billing = df["Billing Amount"].notna() & (
-        ~np.isfinite(df["Billing Amount"]) | (df["Billing Amount"] < 0)
+    invalid_billing = (
+        (billing_original.notna() & df["Billing Amount"].isna())
+        | (
+            df["Billing Amount"].notna() 
+            & (
+                ~np.isfinite(df["Billing Amount"])
+                | (df["Billing Amount"] < 0)
+            )
+        )
     )
+    
     df.loc[invalid_billing, "Billing Amount"] = np.nan
 
-    df["Room Number"] = pd.to_numeric(df["Room Number"], errors="coerce")
-    invalid_room = df["Room Number"].notna() & (
-        (df["Room Number"] < 0) | (df["Room Number"] % 1 != 0)
+    room_original = df["Room Number"].copy()
+    df["Room Number"] = pd.to_numeric(
+        room_original, errors="coerce"
     )
+    invalid_room = (
+        (room_original.notna() & df["Room Number"].isna())
+        | (
+            df["Room Number"].notna() 
+            & (
+                ~np.isfinite(df["Room Number"])
+                | (df["Room Number"] < 0)
+                | (df["Room Number"] % 1 != 0)
+            )
+        )
+    )
+
     df.loc[invalid_room, "Room Number"] = np.nan
     df["Room Number"] = df["Room Number"].astype("Int64")
 
-    # Parse dates; unparseable values become missing.
+    # IMPROVEMENT: Track dates that fail to parse
+    unparseable_dates = {}
+
     for col in DATE_COLUMNS:
+        original_dates = df[col].copy()
         df[col] = pd.to_datetime(df[col], errors="coerce")
+        unparseable_dates[col] = int(
+            (original_dates.notna() & df[col].isna()).sum()
+        )
 
     # Flag contradictory date ranges by nulling the discharge date, rather than
     # silently changing either date.
@@ -141,6 +173,21 @@ def clean_data(input_path: Path) -> tuple[pd.DataFrame, dict]:
     ]:
         df[col] = df[col].astype("string").str.strip().str.title()
 
+    # Preverse standard blood type capitalization
+    df["Blood Type"] = df["Blood Type"].str.upper()
+
+    valid_blood_types = {
+        "A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"
+    }
+
+    invalid_blood_type = (
+        df["Blood Type"].notna()
+        & ~df["Blood Type"].isin(valid_blood_types)
+    )
+
+    invalid_blood_type_count = int(invalid_blood_type.sum())
+    df.loc[invalid_blood_type, "Blood Type"] = pd.NA
+
     report = {
         "input_file": input_path.name,
         "original_rows": int(original_rows),
@@ -150,6 +197,9 @@ def clean_data(input_path: Path) -> tuple[pd.DataFrame, dict]:
         "invalid_billing_values_set_missing": int(invalid_billing.sum()),
         "invalid_room_numbers_set_missing": int(invalid_room.sum()),
         "invalid_date_order_discharge_dates_set_missing": invalid_date_order_count,
+        "rows_dropped_missing_age_or_billing": int(rows_dropped_missing),
+        "unparseable_dates_by_column": unparseable_dates, 
+        "invalid_blood_type_values_set_missing": invalid_blood_type_count,
         "columns_in_input": original_columns,
         "missing_values_by_column": {
             str(k): int(v) for k, v in df.isna().sum().items()
